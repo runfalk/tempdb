@@ -23,9 +23,9 @@ try:
         unquote as url_unquote,
     )
 except ImportError:
+    from urlparse import parse_qsl as url_parse_qsl
     from urllib import (
         quote as _url_quote,
-        parse_qsl as url_parse_qsl,
         unquote as url_unquote,
     )
 
