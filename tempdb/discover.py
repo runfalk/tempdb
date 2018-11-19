@@ -31,7 +31,6 @@ def find_postgres_bin_dir(version=None):
     dirs_by_version = defaultdict(list)
     for d, v in iter_postgres_bin_dirs():
         dirs_by_version[v].append(d)
-    print(dirs_by_version)
 
     if not dirs_by_version:
         raise RuntimeError("Unable to find any postgres installation")

@@ -1,15 +1,22 @@
 import getpass
 import os
 import platform
+import psycopg2
+import sys
 import tempfile
 
-from dsnparse import ParseResult as Dsn
 from glob import glob
 from subprocess import check_output, PIPE, Popen
+from time import sleep
 
 from ._compat import ustr
-from .utils import is_executable, Version
+from .utils import is_executable, Uri, Version
 
+
+__all__ = [
+    "PostgresFactory",
+    "PostgresCluster",
+]
 
 class PostgresFactory(object):
     def __init__(self, pg_bin_dir, superuser=None):
@@ -30,11 +37,11 @@ class PostgresFactory(object):
 
         if superuser is None:
             superuser = getpass.getuser()
-        self.superuser = user
+        self.superuser = superuser
 
     @property
     def version(self):
-        if self._version is None
+        if self._version is None:
             self._version = get_version(self.postgres)
         return self._version
 
@@ -72,7 +79,7 @@ class PostgresFactory(object):
 
         # Since we know this database should never be loaded again we disable
         # safe guards Postgres has to prevent data corruption
-        return self.load_existing(
+        return self.load_cluster(
             data_dir,
             is_temporary=True,
             fsync=False,
@@ -80,54 +87,78 @@ class PostgresFactory(object):
         )
 
     def load_cluster(self, data_dir, is_temporary=False, **params):
+        uri = Uri(
+            scheme="postgresql",
+            user=self.superuser,
+            host=data_dir,
+            params=params,
+        )
+        return PostgresCluster(self.postgres, uri, is_temporary)
+
+
+class PostgresCluster(object):
+    def __init__(self, postgres_bin, uri, is_temporary=False):
+        self.uri = uri
+        self.is_temporary = is_temporary
+        self.returncode = None
+
         cmd = [
-            self.postgres,
-            "-D", data_dir,
-            "-k", data_dir,
+            postgres_bin,
+            "-D", uri.host,
+            "-k", uri.host,
             "-c", "listen_addresses=",
         ]
 
         # Add additional configuration from kwargs
-        for k, v in params.items():
+        for k, v in uri.params.items():
             if isinstance(v, bool):
                 v = "on" if v else "off"
             cmd.extend(["-c", "{}={}".format(k, v)])
 
-        process = Popen(
-            stdout=PIPE,
-            stderr=PIPE,
+        # Start cluster
+        self.process = Popen(
+            cmd,
+            stdout=sys.stdout,
+            stderr=sys.stdout,
         )
-        uri = Uri(
-            user=self.superuser,
-            host=data_dir,
-        )
-        return PostgresCluster(process, data_dir, is_temporary)
 
+        # Wait for a ".s.PGSQL.<id>" file to appear before continuing
+        while not glob(os.path.join(self.data_dir, ".s.PGSQL.*")):
+            sleep(0.1)
 
-class PostgresCluster(object):
-    def __init__(self, process, uri, is_temporary=False):
-        self.is_temporary = is_temporary
-        self.returncode = None
-
-        self.conn = psycopg2.connect(host=uri.host, database="postgresql")
+        # Superuser connection
+        self.conn = psycopg2.connect(host=self.data_dir, database="postgres")
 
     def __del__(self):
         self.close()
 
-    def list_databases(self):
-        with self.conn.cursor() as c:
-            c.execute("SELECT * FROM pg_database")
-            for r in c:
-                print(r)
+    @property
+    def data_dir(self):
+        return self.uri.host
 
-    def kill(self):
-        if self.process is not None:
-            self.process.kill()
-            self.returncode = self.process.wait()
-            self.process = None
+    def iter_databases(self):
+        with self.conn.cursor() as c:
+            default_databases = {"postgres", "template0", "template1"}
+            c.execute("SELECT datname FROM pg_database")
+            for name, in c:
+                if name not in default_databases:
+                    yield name
 
     def close(self):
-        if self.process is not None:
-            self.process.terminate()
-            self.returncode = self.process.wait()
-            self.process = None
+        if self.process is None:
+            return
+
+        self.conn.close()
+        self.process.terminate()
+        self.returncode = self.process.wait()
+
+        # Remove temporary clusters when closing
+        if self.is_temporary:
+            for path, dirs, files in os.walk(self.data_dir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(path, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(path, d))
+            os.rmdir(self.data_dir)
+
+        self.process = None
