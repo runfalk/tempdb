@@ -220,7 +220,7 @@ class Uri(object):
         uri = self
         if self.password is not None:
             uri = self.replace(password="***")
-        return u"<Uri {}>".format(uri)
+        return u"<Uri {!r}>".format(ustr(uri))
 
     def __eq__(self, other):
         if not isinstance(other, Uri):

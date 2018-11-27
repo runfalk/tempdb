@@ -6,6 +6,7 @@ import sys
 import tempfile
 
 from glob import glob
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT, quote_ident
 from subprocess import check_output, PIPE, Popen
 from time import sleep
 
@@ -98,6 +99,10 @@ class PostgresFactory(object):
 
 class PostgresCluster(object):
     def __init__(self, postgres_bin, uri, is_temporary=False):
+        if uri.host is None or not uri.host.startswith("/"):
+            msg = "{!r} doesn't point to a UNIX socket directory"
+            raise ValueError(msg.format(uri))
+
         self.uri = uri
         self.is_temporary = is_temporary
         self.returncode = None
@@ -123,18 +128,17 @@ class PostgresCluster(object):
         )
 
         # Wait for a ".s.PGSQL.<id>" file to appear before continuing
-        while not glob(os.path.join(self.data_dir, ".s.PGSQL.*")):
+        while not glob(os.path.join(uri.host, ".s.PGSQL.*")):
             sleep(0.1)
 
         # Superuser connection
-        self.conn = psycopg2.connect(host=self.data_dir, database="postgres")
+        self.conn = psycopg2.connect(
+            ustr(self.uri.replace(database="postgres"))
+        )
+        self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
 
     def __del__(self):
         self.close()
-
-    @property
-    def data_dir(self):
-        return self.uri.host
 
     def iter_databases(self):
         with self.conn.cursor() as c:
@@ -144,9 +148,36 @@ class PostgresCluster(object):
                 if name not in default_databases:
                     yield name
 
+    def create_database(self, name, template=None):
+        if name in self.iter_databases():
+            raise KeyError("The database {!r} already exists".format(name))
+
+        with self.conn.cursor() as c:
+            sql = "CREATE DATABASE {}".format(quote_ident(name, c))
+            if template is not None:
+                sql += " TEMPLATE {}".format(quote_ident(template, c))
+
+            c.execute(sql)
+
+        return PostgresDatabase(self, self.uri.replace(database=name))
+
+    def get_database(self, name):
+        if name not in self.iter_databases():
+            raise KeyError("The database {!r} doesn't exist".format(name))
+        return PostgresDatabase(self, self.uri.replace(database=name))
+
     def close(self):
         if self.process is None:
             return
+
+        # Kill all connections but this control connection. This prevents
+        # the server waiting for connections to close indefinately
+        with self.conn.cursor() as c:
+            c.execute("""
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE pid != pg_backend_pid()
+            """)
 
         self.conn.close()
         self.process.terminate()
@@ -154,11 +185,21 @@ class PostgresCluster(object):
 
         # Remove temporary clusters when closing
         if self.is_temporary:
-            for path, dirs, files in os.walk(self.data_dir, topdown=False):
+            for path, dirs, files in os.walk(self.uri.host, topdown=False):
                 for f in files:
                     os.remove(os.path.join(path, f))
                 for d in dirs:
                     os.rmdir(os.path.join(path, d))
-            os.rmdir(self.data_dir)
+            os.rmdir(self.uri.host)
 
         self.process = None
+
+
+class PostgresDatabase(object):
+    def __init__(self, cluster, uri):
+        self.cluster = cluster
+        self.uri = uri
+
+    @property
+    def dsn(self):
+        return ustr(self.uri)
