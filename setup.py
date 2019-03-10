@@ -20,9 +20,11 @@ setup(
     license="MIT",
     url="https://github.com/runfalk/tempdb",
     packages=find_packages(exclude=["tests", "tests.*"]),
+    install_requires=[
+        "psycopg2-binary>=2.5",
+    ],
     extras_require={
         "dev": [
-            "psycopg2-binary>=2.5",
             "pytest>=3",
         ],
     },
