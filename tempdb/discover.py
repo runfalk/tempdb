@@ -35,16 +35,31 @@ def find_postgres_bin_dir(version=None):
     if not dirs_by_version:
         raise RuntimeError("Unable to find any postgres installation")
 
-    if version is None:
-        return dirs_by_version[max(dirs_by_version.keys())][0]
+    ordered_dirs = sorted(dirs_by_version.items(), reverse=True)
 
-    # version_hint.match()
+    # If there is no requested version we just pick the latest
+    if version is None:
+        return ordered_dirs[0][1]
+
+    for v, d in ordered_dirs:
+        if version.major != v.major:
+            continue
+
+        if version.minor is not None and version.minor != v.minor:
+            continue
+
+        if version.micro is not None and version.micro != v.micro:
+            continue
+
+        return d
 
 
 def iter_postgres_bin_dirs():
     """
     Use heuristics to locate as many PostgreSQL installations as possible on
     this system.
+
+    :return: An iterator that yield ``(version, path)`` pairs.
     """
     system = platform.system()
     dirs = []
