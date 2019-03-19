@@ -4,7 +4,15 @@ import re
 from collections import OrderedDict
 from subprocess import check_output
 
-from ._compat import is_python2, ustr, url_quote, url_parse_qsl, url_unquote
+from ._compat import (
+    bstr,
+    is_python2,
+    ustr,
+    url_quote,
+    url_parse_qsl,
+    url_unquote,
+)
+
 
 __all__ = [
     "get_version",
@@ -64,6 +72,8 @@ class Version(tuple):
 
     @classmethod
     def from_str(cls, s):
+        if isinstance(s, bstr):
+            s = s.decode("utf8")
         m = cls._version_re.match(s)
         if m is None:
             raise ValueError("{!r} is not a valid version string".format(s))

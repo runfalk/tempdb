@@ -5,7 +5,7 @@ from collections import defaultdict
 from glob import glob
 from subprocess import check_output
 
-from ._compat import ustr
+from ._compat import bstr, ustr
 from .utils import get_version, Version
 
 
@@ -23,7 +23,7 @@ def find_postgres_bin_dir(version=None):
                          prioritize. If that version can't be found
     :return: Path to bin dir if successful, otherwise None
     """
-    if isinstance(version, ustr):
+    if isinstance(version, (bstr, ustr)):
         version = Version.from_str(version)
     elif isinstance(version, int):
         version = Version(version)
