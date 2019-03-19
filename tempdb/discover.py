@@ -39,7 +39,7 @@ def find_postgres_bin_dir(version=None):
 
     # If there is no requested version we just pick the latest
     if version is None:
-        return ordered_dirs[0][1]
+        return ordered_dirs[0][1][0]
 
     for v, d in ordered_dirs:
         if version.major != v.major:
@@ -51,7 +51,7 @@ def find_postgres_bin_dir(version=None):
         if version.micro is not None and version.micro != v.micro:
             continue
 
-        return d
+        return d[0]
 
 
 def iter_postgres_bin_dirs():
