@@ -123,8 +123,8 @@ class PostgresCluster(object):
         # Start cluster
         self.process = Popen(
             cmd,
-            stdout=sys.stdout,
-            stderr=sys.stdout,
+            stdout=PIPE,
+            stderr=PIPE,
         )
 
         # Wait for a ".s.PGSQL.<id>" file to appear before continuing
