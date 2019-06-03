@@ -62,3 +62,13 @@ The following example shows how to create a temporary database with ``pytest``.
                 "Abel",
                 "Cain",
             ]
+
+
+Changelog
+---------
+
+Version 0.1.0
+~~~~~~~~~~~~~
+Released on 3rd June, 2019
+
+- Initial release
